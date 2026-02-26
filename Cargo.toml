@@ -1,6 +1,6 @@
 [package]
 name = "hyper-body-utils"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Rogerio Araújo <rogerio.araujo@gmail.com>"]
 repository = "https://github.com/ararog/hyper-body-utils"
@@ -19,10 +19,9 @@ smol-rt = []
 
 [dependencies]
 bytes = "1.11.1"
-futures = "0.3.32"
+futures = { version = "0.3.32", optional = false, default-features = false}
 http-body-util = "0.1.3"
 hyper = "1.8.1"
-pin-project-lite = "0.2.16"
 smol = { version = "2.0.2", optional = false, default-features = false }
 tokio = { version = "1.49.0", optional = false, default-features = false }
 tokio-util = { version = "0.7.18", optional = false, default-features = false }
