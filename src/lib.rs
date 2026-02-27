@@ -5,6 +5,8 @@ use hyper::body::{Body, Frame, Incoming};
 
 #[cfg(feature = "smol-rt")]
 use smol::fs::File;
+#[cfg(feature = "smol-rt")]
+use smol::io::AsyncReadExt;
 
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
@@ -40,7 +42,7 @@ impl HttpBody {
                 .bytes()
                 .map_ok(|data| Frame::data(bytes::Bytes::copy_from_slice(&[data])));
             let body = StreamBody::new(content);
-            HttpBody::Stream(body.boxed());
+            HttpBody::Stream(body.boxed())
         }
     }
 
@@ -55,7 +57,7 @@ impl HttpBody {
 
         #[cfg(feature = "smol-rt")]
         {
-            let all_bytes = Bytes::copy_from_slice(request.as_ref().raw_body());
+            let all_bytes = Bytes::copy_from_slice(bytes);
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
             HttpBody::Stream(body.boxed())
