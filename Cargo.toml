@@ -1,6 +1,6 @@
 [package]
 name = "hyper-body-utils"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2021"
 authors = ["Rogerio Araújo <rogerio.araujo@gmail.com>"]
 repository = "https://github.com/ararog/hyper-body-utils"
@@ -13,13 +13,16 @@ publish = true
 rust-version = "1.75.0"
 
 [features]
-default = ["tokio-rt"]
+default = ["tokio-rt", "http3"]
 tokio-rt = ["tokio/fs", "tokio-util/io"]
 smol-rt = []
+http3 = ["dep:h3", "dep:h3-quinn"]
 
 [dependencies]
 bytes = "1.11.1"
 futures = { version = "0.3.32", optional = false, default-features = false}
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
 http-body-util = "0.1.3"
 hyper = "1.8.1"
 smol = { version = "2.0.2", optional = false, default-features = false }

@@ -1,6 +1,17 @@
+#[cfg(feature = "http3")]
+use bytes::Buf;
+
 use bytes::Bytes;
-use futures::{FutureExt, Stream, TryStreamExt, stream};
-use http_body_util::{BodyExt, StreamBody, combinators::BoxBody};
+use futures::{stream, FutureExt, Stream, TryStreamExt};
+
+#[cfg(feature = "http3")]
+use h3::client::RequestStream as ClientRequestStream;
+#[cfg(feature = "http3")]
+use h3::server::RequestStream as ServerRequestStream;
+#[cfg(feature = "http3")]
+use h3_quinn::{SendStream, RecvStream};
+
+use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
 
 #[cfg(feature = "smol-rt")]
@@ -16,11 +27,25 @@ use tokio_util::io::ReaderStream;
 pub enum HttpBody {
     Incoming(Incoming),
     Stream(BoxBody<Bytes, std::io::Error>),
+    #[cfg(feature = "http3")]
+    QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
+    #[cfg(feature = "http3")]
+    QuicServerIncoming(ServerRequestStream<RecvStream, Bytes>),
 }
 
 impl HttpBody {
     pub fn from_incoming(incoming: Incoming) -> Self {
         HttpBody::Incoming(incoming)
+    }
+
+    #[cfg(feature = "http3")]
+    pub fn from_quic_client(stream: ClientRequestStream<RecvStream, Bytes>) -> Self {
+        HttpBody::QuicClientIncoming(stream)
+    }
+
+    #[cfg(feature = "http3")]
+    pub fn from_quic_server(stream: ServerRequestStream<RecvStream, Bytes>) -> Self {
+        HttpBody::QuicServerIncoming(stream)
     }
 
     pub fn from_text(text: &str) -> Self {
@@ -82,6 +107,22 @@ impl Body for HttpBody {
             HttpBody::Stream(stream) => {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
+            #[cfg(feature = "http3")]
+            HttpBody::QuicClientIncoming(stream) => stream.poll_recv_data(cx).map(|value| match value {
+                Ok(Some(mut value)) => {
+                    Some(Ok(Frame::data(value.copy_to_bytes(value.remaining()))))
+                }
+                Ok(None) => None,
+                Err(e) => Some(Err(std::io::Error::other(e))),
+            }),
+            #[cfg(feature = "http3")]
+            HttpBody::QuicServerIncoming(stream) => stream.poll_recv_data(cx).map(|value| match value {
+                Ok(Some(mut value)) => {
+                    Some(Ok(Frame::data(value.copy_to_bytes(value.remaining()))))
+                }
+                Ok(None) => None,
+                Err(e) => Some(Err(std::io::Error::other(e))),
+            }),
         }
     }
 }
