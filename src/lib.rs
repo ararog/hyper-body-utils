@@ -2,16 +2,20 @@
 use bytes::Buf;
 
 use bytes::Bytes;
-use futures::{stream, FutureExt, Stream, TryStreamExt};
+use futures::{ready, stream, FutureExt, Stream, TryStreamExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[cfg(feature = "http3")]
 use h3::client::RequestStream as ClientRequestStream;
 #[cfg(feature = "http3")]
 use h3::server::RequestStream as ServerRequestStream;
 #[cfg(feature = "http3")]
-use h3_quinn::{SendStream, RecvStream};
+use h3_quinn::{RecvStream};
 
-use http_body_util::{combinators::BoxBody, BodyExt, StreamBody};
+pub use http_body_util::BodyExt;
+
+use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
 
 #[cfg(feature = "smol-rt")]
@@ -23,6 +27,9 @@ use smol::io::AsyncReadExt;
 use tokio::fs::File;
 #[cfg(feature = "tokio-rt")]
 use tokio_util::io::ReaderStream;
+
+#[cfg(test)]
+mod tests;
 
 pub enum HttpBody {
     Incoming(Incoming),
@@ -62,10 +69,9 @@ impl HttpBody {
 
         #[cfg(feature = "smol-rt")]
         {
-            // TODO: This is not right, I'm mapping all slices and placing them in memory
             let content = file
                 .bytes()
-                .map_ok(|data| Frame::data(bytes::Bytes::copy_from_slice(&[data])));
+                .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
             let body = StreamBody::new(content);
             HttpBody::Stream(body.boxed())
         }
@@ -96,9 +102,9 @@ impl Body for HttpBody {
     type Error = std::io::Error;
 
     fn poll_frame(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
             HttpBody::Incoming(incoming) => incoming
                 .frame()
@@ -108,21 +114,34 @@ impl Body for HttpBody {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
             #[cfg(feature = "http3")]
-            HttpBody::QuicClientIncoming(stream) => stream.poll_recv_data(cx).map(|value| match value {
-                Ok(Some(mut value)) => {
-                    Some(Ok(Frame::data(value.copy_to_bytes(value.remaining()))))
-                }
-                Ok(None) => None,
-                Err(e) => Some(Err(std::io::Error::other(e))),
-            }),
+            HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => {
+                    println!("Error polling frame: {}", e);
+                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                },
+            },
             #[cfg(feature = "http3")]
-            HttpBody::QuicServerIncoming(stream) => stream.poll_recv_data(cx).map(|value| match value {
-                Ok(Some(mut value)) => {
-                    Some(Ok(Frame::data(value.copy_to_bytes(value.remaining()))))
-                }
-                Ok(None) => None,
-                Err(e) => Some(Err(std::io::Error::other(e))),
-            }),
+            HttpBody::QuicServerIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+            },
         }
     }
 }
@@ -131,9 +150,9 @@ impl Stream for HttpBody {
     type Item = Result<Frame<Bytes>, std::io::Error>;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
         self.poll_frame(cx)
     }
 }
