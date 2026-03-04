@@ -1,8 +1,10 @@
 #[cfg(feature = "http3")]
 use bytes::Buf;
+#[cfg(feature = "http3")]
+use futures::ready;
 
-use bytes::Bytes;
-use futures::{ready, stream, FutureExt, Stream, TryStreamExt};
+use bytes::{Bytes};
+use futures::{stream, FutureExt, Stream, TryStreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -11,7 +13,7 @@ use h3::client::RequestStream as ClientRequestStream;
 #[cfg(feature = "http3")]
 use h3::server::RequestStream as ServerRequestStream;
 #[cfg(feature = "http3")]
-use h3_quinn::{RecvStream};
+use h3_quinn::RecvStream;
 
 pub use http_body_util::BodyExt;
 
@@ -20,13 +22,9 @@ use hyper::body::{Body, Frame, Incoming};
 
 #[cfg(feature = "smol-rt")]
 use smol::fs::File;
-#[cfg(feature = "smol-rt")]
-use smol::io::AsyncReadExt;
 
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
-#[cfg(feature = "tokio-rt")]
-use tokio_util::io::ReaderStream;
 
 #[cfg(test)]
 mod tests;
@@ -62,9 +60,9 @@ impl HttpBody {
     pub fn from_file(file: File) -> Self {
         #[cfg(feature = "tokio-rt")]
         {
-            let content = ReaderStream::new(file).map_ok(Frame::data);
+            let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
             let body = StreamBody::new(content);
-            HttpBody::Stream(body.boxed())
+            HttpBody::Stream(BodyExt::boxed(body))
         }
 
         #[cfg(feature = "smol-rt")]
@@ -73,7 +71,7 @@ impl HttpBody {
                 .bytes()
                 .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
             let body = StreamBody::new(content);
-            HttpBody::Stream(body.boxed())
+            HttpBody::Stream(BodyExt::boxed(body))
         }
     }
 
@@ -83,7 +81,7 @@ impl HttpBody {
             let all_bytes = Bytes::copy_from_slice(bytes);
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
-            HttpBody::Stream(body.boxed())
+            HttpBody::Stream(BodyExt::boxed(body))
         }
 
         #[cfg(feature = "smol-rt")]
@@ -91,7 +89,7 @@ impl HttpBody {
             let all_bytes = Bytes::copy_from_slice(bytes);
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
-            HttpBody::Stream(body.boxed())
+            HttpBody::Stream(BodyExt::boxed(body))
         }
     }
 }
@@ -127,7 +125,7 @@ impl Body for HttpBody {
                 Err(e) => {
                     println!("Error polling frame: {}", e);
                     Poll::Ready(Some(Err(std::io::Error::other(e))))
-                },
+                }
             },
             #[cfg(feature = "http3")]
             HttpBody::QuicServerIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
@@ -149,10 +147,43 @@ impl Body for HttpBody {
 impl Stream for HttpBody {
     type Item = Result<Frame<Bytes>, std::io::Error>;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_frame(cx)
     }
 }
+
+/*
+pub struct FileStream {
+    file: OwnedMutexGuard<File>,
+}
+
+impl FileStream {
+    pub fn new(file: OwnedMutexGuard<File>) -> Self {
+        FileStream { file }
+    }
+}
+
+impl Stream for FileStream {
+    type Item = Result<Frame<Bytes>, std::io::Error>;
+
+    #[hotpath::measure]
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut me = self.as_mut();
+        let mut buf = BytesMut::with_capacity(70);
+        let mut read_buf = Box::pin(me.file.read_buf(&mut buf));
+        match read_buf.poll_unpin(cx) {
+            Poll::Ready(value) => match value {
+                Ok(size) => {
+                    if size == 0 {
+                        Poll::Ready(None)
+                    } else {
+                        Poll::Ready(Some(Ok(Frame::data(buf.into()))))
+                    }
+                }
+                Err(e) => Poll::Ready(Some(Err(e))),
+            },
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+*/
