@@ -3,7 +3,7 @@ use bytes::Buf;
 #[cfg(feature = "http3")]
 use futures::ready;
 
-use bytes::{Bytes};
+use bytes::Bytes;
 use futures::{stream, FutureExt, Stream, TryStreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};

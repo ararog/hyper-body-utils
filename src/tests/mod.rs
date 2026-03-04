@@ -2,9 +2,9 @@ use futures::StreamExt;
 #[cfg(feature = "smol-rt")]
 use macro_rules_attribute::apply;
 #[cfg(feature = "smol-rt")]
-use smol_macros::test;
-#[cfg(feature = "smol-rt")]
 use smol::fs::File;
+#[cfg(feature = "smol-rt")]
+use smol_macros::test;
 
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
@@ -35,4 +35,3 @@ async fn test_file() -> Result<(), std::io::Error> {
 async fn test_file() -> Result<(), std::io::Error> {
     do_test_file().await
 }
-
