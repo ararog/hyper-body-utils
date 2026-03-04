@@ -22,6 +22,8 @@ use hyper::body::{Body, Frame, Incoming};
 
 #[cfg(feature = "smol-rt")]
 use smol::fs::File;
+#[cfg(feature = "smol-rt")]
+use smol::io::AsyncReadExt;
 
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
