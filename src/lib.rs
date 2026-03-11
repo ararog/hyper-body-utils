@@ -28,6 +28,9 @@ use smol::io::AsyncReadExt;
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
 
+#[cfg(feature = "compio-rt")]
+use compio_fs::File;
+
 #[cfg(test)]
 mod tests;
 
@@ -75,6 +78,11 @@ impl HttpBody {
             let body = StreamBody::new(content);
             HttpBody::Stream(BodyExt::boxed(body))
         }
+
+        #[cfg(feature = "compio-rt")]
+        {
+            unimplemented!()
+        }
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -92,6 +100,11 @@ impl HttpBody {
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
             HttpBody::Stream(BodyExt::boxed(body))
+        }
+
+        #[cfg(feature = "compio-rt")]
+        {
+            unimplemented!()
         }
     }
 }
