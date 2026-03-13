@@ -11,7 +11,7 @@ use smol::fs::File;
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
 
-use crate::HttpBody;
+use hyper_body_utils::HttpBody;
 
 pub async fn do_test_file() -> Result<(), std::io::Error> {
     let file = File::open("src/tests/files/index.html").await?;
