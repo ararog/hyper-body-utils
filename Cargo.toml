@@ -12,12 +12,15 @@ keywords = ["http", "hyper", "server", "client"]
 publish = true
 rust-version = "1.75.0"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
-default = ["tokio-rt"]
+default = ["compio-rt"]
 
 tokio-rt = ["tokio/fs", "tokio-util/io"]
 smol-rt = ["smol"]
-compio-rt = ["dep:compio", "dep:compio-io", "dep:compio-fs", "dep:compio-runtime"]
+compio-rt = ["compio-io/bytes", "dep:compio-fs", "send_wrapper/futures"]
 http3 = ["dep:h3", "dep:h3-quinn"]
 
 hotpath = ["hotpath/hotpath"]
@@ -25,10 +28,8 @@ hotpath-alloc = ["hotpath/hotpath-alloc"]
 
 [dependencies]
 bytes = "1.11.1"
-compio = { version = "0.18.0", optional = true, features = ["macros"] }
-compio-fs = { version = "0.11.0", optional = true, default-features = false }
-compio-io = { version = "0.9.1", optional = true, default-features = false }
-compio-runtime = { version = "0.11.0", optional = true, default-features = false }
+compio-fs = { git="https://github.com/compio-rs/compio.git", optional = true, default-features = false }
+compio-io = { git="https://github.com/compio-rs/compio.git", optional = true, default-features = false }
 futures = { version = "0.3.32", optional = false, default-features = false}
 futures-util = "0.3.32"
 h3 = { version = "0.0.8", optional = true }
@@ -38,10 +39,12 @@ http-body-util = "0.1.3"
 hyper = "1.8.1"
 macro_rules_attribute = "0.2.2"
 pin-project-lite = "0.2.17"
+send_wrapper = { version = "0.6.0", optional = true, default-features = false }
 smol = { version = "2.0.2", optional = true, default-features = false }
 smol-macros = "0.1.1"
 tokio = { version = "1.50.0", optional = true, default-features = false }
 tokio-util = { version = "0.7.18", optional = true, default-features = false }
 
 [dev-dependencies]
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.50.0", features = ["macros"] }
+compio = { version = "0.18.0", features = ["macros", "runtime", "io-uring"] }
