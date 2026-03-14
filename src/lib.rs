@@ -4,7 +4,7 @@ use bytes::Buf;
 use futures::ready;
 
 use bytes::Bytes;
-use futures::{stream, FutureExt, Stream, StreamExt, TryStreamExt};
+use futures::{stream, FutureExt, Stream, TryStreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -37,6 +37,8 @@ use compio_fs::File;
 use compio_io::AsyncReadExt;
 #[cfg(feature = "compio-rt")]
 use send_wrapper::SendWrapper;
+
+mod tests;
 
 pub enum HttpBody {
     Incoming(Incoming),
@@ -108,7 +110,7 @@ impl HttpBody {
             let all_bytes = Bytes::copy_from_slice(bytes);
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
-            HttpBody::Stream(Box::pin(body))
+            HttpBody::Stream(BodyExt::boxed(body))
         }
 
         #[cfg(feature = "compio-rt")]
@@ -116,7 +118,7 @@ impl HttpBody {
             let all_bytes = Bytes::copy_from_slice(bytes);
             let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
             let body = StreamBody::new(content);
-            HttpBody::Stream(Box::pin(body))
+            HttpBody::Stream(Box::pin(SendWrapper::new(body)))
         }
     }
 }
@@ -142,7 +144,9 @@ impl Body for HttpBody {
             }
 
             #[cfg(feature = "compio-rt")]
-            HttpBody::Stream(stream) => stream.poll_next_unpin(cx).map_err(std::io::Error::other),
+            HttpBody::Stream(stream) => {
+                stream::StreamExt::poll_next_unpin(stream, cx).map_err(std::io::Error::other)
+            }
 
             #[cfg(feature = "http3")]
             HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {

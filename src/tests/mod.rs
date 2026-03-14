@@ -11,9 +11,9 @@ use smol::fs::File;
 #[cfg(feature = "tokio-rt")]
 use tokio::fs::File;
 
-use hyper_body_utils::HttpBody;
+use crate::HttpBody;
 
-pub async fn do_test_file() -> Result<(), std::io::Error> {
+async fn do_test_file() -> Result<(), std::io::Error> {
     let file = File::open("src/tests/files/index.html").await?;
     let mut body = HttpBody::from_file(file);
     let mut buffer = Vec::new();

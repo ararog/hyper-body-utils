@@ -936,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "hyper-body-utils"
-version = "0.1.6-beta.4"
+version = "0.1.6-beta.5"
 dependencies = [
  "bytes",
  "compio",
