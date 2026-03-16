@@ -20,7 +20,7 @@ pub use http_body_util::BodyExt;
 use http_body_util::StreamBody;
 use hyper::body::{Body, Frame, Incoming};
 
-#[cfg(not(feature = "compio-rt"))]
+#[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
 use http_body_util::combinators::BoxBody;
 
 #[cfg(feature = "smol-rt")]
