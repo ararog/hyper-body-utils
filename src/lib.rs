@@ -17,8 +17,11 @@ use h3_quinn::RecvStream;
 
 pub use http_body_util::BodyExt;
 
-use http_body_util::{combinators::BoxBody, StreamBody};
+use http_body_util::StreamBody;
 use hyper::body::{Body, Frame, Incoming};
+
+#[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
+use http_body_util::combinators::BoxBody;
 
 #[cfg(feature = "smol-rt")]
 use smol::fs::File;
@@ -30,13 +33,19 @@ use tokio::fs::File;
 
 #[cfg(feature = "compio-rt")]
 use compio_fs::File;
+#[cfg(feature = "compio-rt")]
+use compio_io::AsyncReadExt;
+#[cfg(feature = "compio-rt")]
+use send_wrapper::SendWrapper;
 
-#[cfg(test)]
 mod tests;
 
 pub enum HttpBody {
     Incoming(Incoming),
+    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     Stream(BoxBody<Bytes, std::io::Error>),
+    #[cfg(feature = "compio-rt")]
+    Stream(Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>),
     #[cfg(feature = "http3")]
     QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
     #[cfg(feature = "http3")]
@@ -81,7 +90,9 @@ impl HttpBody {
 
         #[cfg(feature = "compio-rt")]
         {
-            unimplemented!()
+            let content = std::io::Cursor::new(file).read_only().bytes();
+            let body = StreamBody::new(content.map_ok(Frame::data));
+            HttpBody::Stream(Box::pin(SendWrapper::new(body)))
         }
     }
 
@@ -104,7 +115,10 @@ impl HttpBody {
 
         #[cfg(feature = "compio-rt")]
         {
-            unimplemented!()
+            let all_bytes = Bytes::copy_from_slice(bytes);
+            let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
+            let body = StreamBody::new(content);
+            HttpBody::Stream(Box::pin(SendWrapper::new(body)))
         }
     }
 }
@@ -123,9 +137,17 @@ impl Body for HttpBody {
                 .frame()
                 .poll_unpin(cx)
                 .map_err(std::io::Error::other),
+
+            #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
             HttpBody::Stream(stream) => {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
+
+            #[cfg(feature = "compio-rt")]
+            HttpBody::Stream(stream) => {
+                stream::StreamExt::poll_next_unpin(stream, cx).map_err(std::io::Error::other)
+            }
+
             #[cfg(feature = "http3")]
             HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
