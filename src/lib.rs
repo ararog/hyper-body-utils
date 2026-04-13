@@ -23,18 +23,6 @@ use hyper::body::{Body, Frame, Incoming};
 #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
 use http_body_util::combinators::BoxBody;
 
-#[cfg(feature = "smol-rt")]
-use smol::fs::File;
-#[cfg(feature = "smol-rt")]
-use smol::io::AsyncReadExt;
-
-#[cfg(feature = "tokio-rt")]
-use tokio::fs::File;
-
-#[cfg(feature = "compio-rt")]
-use compio_fs::File;
-#[cfg(feature = "compio-rt")]
-use compio_io::AsyncReadExt;
 #[cfg(feature = "compio-rt")]
 use send_wrapper::SendWrapper;
 
@@ -43,9 +31,9 @@ mod tests;
 pub enum HttpBody {
     Incoming(Incoming),
     #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
-    Stream(BoxBody<Bytes, std::io::Error>),
+    BoxedStream(BoxBody<Bytes, std::io::Error>),
     #[cfg(feature = "compio-rt")]
-    Stream(Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>),
+    WrappedStream(Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>),
     #[cfg(feature = "http3")]
     QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
     #[cfg(feature = "http3")]
@@ -67,59 +55,58 @@ impl HttpBody {
         HttpBody::QuicServerIncoming(stream)
     }
 
+    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     pub fn from_text(text: &str) -> Self {
         Self::from_bytes(text.as_bytes())
     }
 
-    pub fn from_file(file: File) -> Self {
-        #[cfg(feature = "tokio-rt")]
-        {
-            let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
-            let body = StreamBody::new(content);
-            HttpBody::Stream(BodyExt::boxed(body))
-        }
-
-        #[cfg(feature = "smol-rt")]
-        {
-            let content = file
-                .bytes()
-                .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-            let body = StreamBody::new(content);
-            HttpBody::Stream(BodyExt::boxed(body))
-        }
-
-        #[cfg(feature = "compio-rt")]
-        {
-            let content = std::io::Cursor::new(file).read_only().bytes();
-            let body = StreamBody::new(content.map_ok(Frame::data));
-            HttpBody::Stream(Box::pin(SendWrapper::new(body)))
-        }
+    #[cfg(feature = "compio-rt")]
+    pub fn wrap_text(text: &str) -> Self {
+        Self::wrap_bytes(text.as_bytes())
     }
 
+    ///
+    /// For tokio-rt
+    ///
+    /// let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
+    ///
+    ///
+    /// For smol-rt
+    ///
+    /// let content = file
+    ///         .bytes()
+    ///         .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
+    ///
+    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
+    pub fn from_stream<S>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + Sync + 'static,
+    {
+        let body = StreamBody::new(stream);
+        HttpBody::BoxedStream(BodyExt::boxed(body))
+    }
+
+    #[cfg(feature = "compio-rt")]
+    pub fn from_cursor(cursor: Cursor<_>) -> Self {
+        let content = cursor.read_only().bytes();
+        let body = StreamBody::new(content.map_ok(Frame::data));
+        HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
+    }
+
+    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        #[cfg(feature = "tokio-rt")]
-        {
-            let all_bytes = Bytes::copy_from_slice(bytes);
-            let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
-            let body = StreamBody::new(content);
-            HttpBody::Stream(BodyExt::boxed(body))
-        }
+        let all_bytes = Bytes::copy_from_slice(bytes);
+        let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
+        let body = StreamBody::new(content);
+        HttpBody::BoxedStream(BodyExt::boxed(body))
+    }
 
-        #[cfg(feature = "smol-rt")]
-        {
-            let all_bytes = Bytes::copy_from_slice(bytes);
-            let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
-            let body = StreamBody::new(content);
-            HttpBody::Stream(BodyExt::boxed(body))
-        }
-
-        #[cfg(feature = "compio-rt")]
-        {
-            let all_bytes = Bytes::copy_from_slice(bytes);
-            let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
-            let body = StreamBody::new(content);
-            HttpBody::Stream(Box::pin(SendWrapper::new(body)))
-        }
+    #[cfg(feature = "compio-rt")]
+    pub fn wrap_bytes(bytes: &[u8]) -> Self {
+        let all_bytes = Bytes::copy_from_slice(bytes);
+        let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
+        let body = StreamBody::new(content);
+        HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
     }
 }
 
@@ -139,12 +126,12 @@ impl Body for HttpBody {
                 .map_err(std::io::Error::other),
 
             #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
-            HttpBody::Stream(stream) => {
+            HttpBody::BoxedStream(stream) => {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
 
             #[cfg(feature = "compio-rt")]
-            HttpBody::Stream(stream) => {
+            HttpBody::WrappedStream(stream) => {
                 stream::StreamExt::poll_next_unpin(stream, cx).map_err(std::io::Error::other)
             }
 
@@ -188,39 +175,3 @@ impl Stream for HttpBody {
         self.poll_frame(cx)
     }
 }
-
-/*
-pub struct FileStream {
-    file: OwnedMutexGuard<File>,
-}
-
-impl FileStream {
-    pub fn new(file: OwnedMutexGuard<File>) -> Self {
-        FileStream { file }
-    }
-}
-
-impl Stream for FileStream {
-    type Item = Result<Frame<Bytes>, std::io::Error>;
-
-    #[hotpath::measure]
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut me = self.as_mut();
-        let mut buf = BytesMut::with_capacity(70);
-        let mut read_buf = Box::pin(me.file.read_buf(&mut buf));
-        match read_buf.poll_unpin(cx) {
-            Poll::Ready(value) => match value {
-                Ok(size) => {
-                    if size == 0 {
-                        Poll::Ready(None)
-                    } else {
-                        Poll::Ready(Some(Ok(Frame::data(buf.into()))))
-                    }
-                }
-                Err(e) => Poll::Ready(Some(Err(e))),
-            },
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-*/
