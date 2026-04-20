@@ -20,20 +20,18 @@ pub use http_body_util::BodyExt;
 use http_body_util::StreamBody;
 use hyper::body::{Body, Frame, Incoming};
 
-#[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
 use http_body_util::combinators::BoxBody;
 
-#[cfg(feature = "compio-rt")]
-use send_wrapper::SendWrapper;
+// #[cfg(feature = "compio-rt")]
+// use send_wrapper::SendWrapper;
 
 mod tests;
 
 pub enum HttpBody {
     Incoming(Incoming),
-    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     BoxedStream(BoxBody<Bytes, std::io::Error>),
-    #[cfg(feature = "compio-rt")]
-    WrappedStream(Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>),
+    // #[cfg(feature = "compio-rt")]
+    // WrappedStream(Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send>>),
     #[cfg(feature = "http3")]
     QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
     #[cfg(feature = "http3")]
@@ -60,23 +58,11 @@ impl HttpBody {
         Self::from_bytes(text.as_bytes())
     }
 
-    #[cfg(feature = "compio-rt")]
-    pub fn wrap_text(text: &str) -> Self {
-        Self::wrap_bytes(text.as_bytes())
-    }
+    // #[cfg(feature = "compio-rt")]
+    // pub fn wrap_text(text: &str) -> Self {
+    //     Self::wrap_bytes(text.as_bytes())
+    // }
 
-    ///
-    /// For tokio-rt
-    ///
-    /// let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
-    ///
-    ///
-    /// For smol-rt
-    ///
-    /// let content = file
-    ///         .bytes()
-    ///         .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-    ///
     #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     pub fn from_stream<S>(stream: S) -> Self
     where
@@ -86,14 +72,13 @@ impl HttpBody {
         HttpBody::BoxedStream(BodyExt::boxed(body))
     }
 
-    #[cfg(feature = "compio-rt")]
-    pub fn from_cursor(cursor: Cursor<_>) -> Self {
-        let content = cursor.read_only().bytes();
-        let body = StreamBody::new(content.map_ok(Frame::data));
-        HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
-    }
+    // #[cfg(feature = "compio-rt")]
+    // pub fn from_cursor(cursor: Cursor<_>) -> Self {
+    //     let content = cursor.read_only().bytes();
+    //     let body = StreamBody::new(content.map_ok(Frame::data));
+    //     HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
+    // }
 
-    #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let all_bytes = Bytes::copy_from_slice(bytes);
         let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
@@ -101,13 +86,13 @@ impl HttpBody {
         HttpBody::BoxedStream(BodyExt::boxed(body))
     }
 
-    #[cfg(feature = "compio-rt")]
-    pub fn wrap_bytes(bytes: &[u8]) -> Self {
-        let all_bytes = Bytes::copy_from_slice(bytes);
-        let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
-        let body = StreamBody::new(content);
-        HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
-    }
+    // #[cfg(feature = "compio-rt")]
+    // pub fn wrap_bytes(bytes: &[u8]) -> Self {
+    //     let all_bytes = Bytes::copy_from_slice(bytes);
+    //     let content = stream::iter(vec![Ok(all_bytes)]).map_ok(Frame::data);
+    //     let body = StreamBody::new(content);
+    //     HttpBody::WrappedStream(Box::pin(SendWrapper::new(body)))
+    // }
 }
 
 impl Body for HttpBody {
@@ -125,16 +110,14 @@ impl Body for HttpBody {
                 .poll_unpin(cx)
                 .map_err(std::io::Error::other),
 
-            #[cfg(any(feature = "tokio-rt", feature = "smol-rt"))]
             HttpBody::BoxedStream(stream) => {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
 
-            #[cfg(feature = "compio-rt")]
-            HttpBody::WrappedStream(stream) => {
-                stream::StreamExt::poll_next_unpin(stream, cx).map_err(std::io::Error::other)
-            }
-
+            // #[cfg(feature = "compio-rt")]
+            // HttpBody::WrappedStream(stream) => {
+            //     stream::StreamExt::poll_next_unpin(stream, cx).map_err(std::io::Error::other)
+            // }
             #[cfg(feature = "http3")]
             HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
