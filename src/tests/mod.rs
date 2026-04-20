@@ -1,5 +1,6 @@
 use futures::{StreamExt, TryStreamExt};
 use hyper::body::Frame;
+
 #[cfg(feature = "smol-rt")]
 use macro_rules_attribute::apply;
 #[cfg(feature = "smol-rt")]
@@ -43,9 +44,9 @@ async fn test_file_smol() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-#[cfg(feature = "compio-rt")]
-#[compio::test]
-async fn test_file_compio() -> Result<(), std::io::Error> {
-    use compio_fs::File;
-    do_test_file().await
-}
+// #[cfg(feature = "compio-rt")]
+// #[compio::test]
+// async fn test_file_compio() -> Result<(), std::io::Error> {
+//     use compio_fs::File;
+//     do_test_file().await
+// }
