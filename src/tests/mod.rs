@@ -1,14 +1,12 @@
-use futures::{StreamExt, TryStreamExt};
 use hyper::body::Frame;
-
-#[cfg(feature = "smol-rt")]
 use macro_rules_attribute::apply;
-#[cfg(feature = "smol-rt")]
+use smol::io::AsyncReadExt;
 use smol_macros::test;
 
 use crate::HttpBody;
+use bytes::Bytes;
+use futures::{StreamExt, TryStreamExt};
 
-#[cfg(feature = "tokio-rt")]
 #[tokio::test]
 async fn test_file_tokio() -> Result<(), std::io::Error> {
     use tokio::fs::File;
@@ -25,7 +23,6 @@ async fn test_file_tokio() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-#[cfg(feature = "smol-rt")]
 #[apply(test!)]
 async fn test_file_smol() -> Result<(), std::io::Error> {
     use smol::fs::File;
@@ -43,10 +40,3 @@ async fn test_file_smol() -> Result<(), std::io::Error> {
     assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
     Ok(())
 }
-
-// #[cfg(feature = "compio-rt")]
-// #[compio::test]
-// async fn test_file_compio() -> Result<(), std::io::Error> {
-//     use compio_fs::File;
-//     do_test_file().await
-// }
