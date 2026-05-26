@@ -8,8 +8,11 @@ use futures::{stream, FutureExt, Stream, TryStreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+#[cfg(feature = "http3")]
 use h3::client::RequestStream as ClientRequestStream;
+#[cfg(feature = "http3")]
 use h3::server::RequestStream as ServerRequestStream;
+#[cfg(feature = "http3")]
 use h3_quinn::RecvStream;
 
 pub use http_body_util::BodyExt;
@@ -29,8 +32,10 @@ pub enum HttpBody {
     /// Boxed stream body
     BoxedStream(BoxBody<Bytes, std::io::Error>),
     /// QUIC client incoming stream
+    #[cfg(feature = "http3")]
     QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
     /// QUIC server incoming stream
+    #[cfg(feature = "http3")]
     QuicServerIncoming(ServerRequestStream<RecvStream, Bytes>),
 }
 
@@ -41,11 +46,13 @@ impl HttpBody {
     }
 
     /// Create a new HttpBody from a QUIC client stream
+    #[cfg(feature = "http3")]
     pub fn from_quic_client(stream: ClientRequestStream<RecvStream, Bytes>) -> Self {
         HttpBody::QuicClientIncoming(stream)
     }
 
     /// Create a new HttpBody from a QUIC server stream
+    #[cfg(feature = "http3")]
     pub fn from_quic_server(stream: ServerRequestStream<RecvStream, Bytes>) -> Self {
         HttpBody::QuicServerIncoming(stream)
     }
@@ -97,6 +104,7 @@ impl Body for HttpBody {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
 
+            #[cfg(feature = "http3")]
             HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
@@ -112,6 +120,8 @@ impl Body for HttpBody {
                     Poll::Ready(Some(Err(std::io::Error::other(e))))
                 }
             },
+
+            #[cfg(feature = "http3")]
             HttpBody::QuicServerIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
