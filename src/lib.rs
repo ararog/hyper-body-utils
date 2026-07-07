@@ -1,26 +1,25 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
+#[cfg(feature = "http3")]
 use bytes::Buf;
-use futures::ready;
-
 use bytes::Bytes;
+#[cfg(feature = "http3")]
+use futures::ready;
 use futures::{stream, FutureExt, Stream, TryStreamExt};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
 #[cfg(feature = "http3")]
 use h3::client::RequestStream as ClientRequestStream;
 #[cfg(feature = "http3")]
 use h3::server::RequestStream as ServerRequestStream;
 #[cfg(feature = "http3")]
 use h3_quinn::RecvStream;
+use http_body_util::{combinators::BoxBody, StreamBody};
+use hyper::body::{Body, Frame, Incoming};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 pub use http_body_util::BodyExt;
-
-use http_body_util::StreamBody;
-use hyper::body::{Body, Frame, Incoming};
-
-use http_body_util::combinators::BoxBody;
 
 #[cfg(test)]
 mod tests;
