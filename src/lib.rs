@@ -3,15 +3,17 @@
 #[cfg(feature = "http3")]
 use bytes::Buf;
 use bytes::Bytes;
+#[cfg(all(feature = "http3", feature = "compio"))]
+use compio_quic::RecvStream as CompioRecvStream;
 #[cfg(feature = "http3")]
 use futures::ready;
 use futures::{stream, FutureExt, Stream, TryStreamExt};
 #[cfg(feature = "http3")]
-use h3::client::RequestStream as ClientRequestStream;
-#[cfg(feature = "http3")]
-use h3::server::RequestStream as ServerRequestStream;
-#[cfg(feature = "http3")]
-use h3_quinn::RecvStream;
+use h3::{
+    client::RequestStream as ClientRequestStream, server::RequestStream as ServerRequestStream,
+};
+#[cfg(all(feature = "http3", feature = "generic"))]
+use h3_quinn::RecvStream as GenericRecvStream;
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
 use std::{
@@ -31,11 +33,17 @@ pub enum HttpBody {
     /// Boxed stream body
     BoxedStream(BoxBody<Bytes, std::io::Error>),
     /// QUIC client incoming stream
-    #[cfg(feature = "http3")]
-    QuicClientIncoming(ClientRequestStream<RecvStream, Bytes>),
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    GenericClient(ClientRequestStream<GenericRecvStream, Bytes>),
     /// QUIC server incoming stream
-    #[cfg(feature = "http3")]
-    QuicServerIncoming(ServerRequestStream<RecvStream, Bytes>),
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    GenericServer(ServerRequestStream<GenericRecvStream, Bytes>),
+    /// QUIC client incoming stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
+    /// QUIC server incoming stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
 }
 
 impl HttpBody {
@@ -45,15 +53,27 @@ impl HttpBody {
     }
 
     /// Create a new HttpBody from a QUIC client stream
-    #[cfg(feature = "http3")]
-    pub fn from_quic_client(stream: ClientRequestStream<RecvStream, Bytes>) -> Self {
-        HttpBody::QuicClientIncoming(stream)
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    pub fn from_generic_client(stream: ClientRequestStream<GenericRecvStream, Bytes>) -> Self {
+        HttpBody::GenericClient(stream)
     }
 
     /// Create a new HttpBody from a QUIC server stream
-    #[cfg(feature = "http3")]
-    pub fn from_quic_server(stream: ServerRequestStream<RecvStream, Bytes>) -> Self {
-        HttpBody::QuicServerIncoming(stream)
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    pub fn from_generic_server(stream: ServerRequestStream<GenericRecvStream, Bytes>) -> Self {
+        HttpBody::GenericServer(stream)
+    }
+
+    /// Create a new HttpBody from a QUIC client stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    pub fn from_compio_client(stream: ClientRequestStream<CompioRecvStream, Bytes>) -> Self {
+        HttpBody::CompioClient(stream)
+    }
+
+    /// Create a new HttpBody from a QUIC server stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    pub fn from_compio_server(stream: ServerRequestStream<CompioRecvStream, Bytes>) -> Self {
+        HttpBody::CompioServer(stream)
     }
 
     /// Create a new HttpBody from a text string
@@ -103,8 +123,8 @@ impl Body for HttpBody {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
 
-            #[cfg(feature = "http3")]
-            HttpBody::QuicClientIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
+            #[cfg(all(feature = "http3", feature = "generic"))]
+            HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
                         frame.copy_to_bytes(frame.remaining()),
@@ -120,8 +140,39 @@ impl Body for HttpBody {
                 }
             },
 
-            #[cfg(feature = "http3")]
-            HttpBody::QuicServerIncoming(stream) => match ready!(stream.poll_recv_data(cx)) {
+            #[cfg(all(feature = "http3", feature = "generic"))]
+            HttpBody::GenericServer(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+            },
+
+            #[cfg(all(feature = "http3", feature = "compio"))]
+            HttpBody::CompioClient(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => {
+                    println!("Error polling frame: {}", e);
+                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                }
+            },
+
+            #[cfg(all(feature = "http3", feature = "compio"))]
+            HttpBody::CompioServer(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
                         frame.copy_to_bytes(frame.remaining()),
