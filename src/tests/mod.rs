@@ -1,62 +1,98 @@
 use crate::HttpBody;
 use bytes::Bytes;
-use futures::{StreamExt, TryStreamExt};
-use hyper::body::Frame;
-use macro_rules_attribute::apply;
-use smol::io::AsyncReadExt;
-use smol_macros::test;
+use hyper::body::Body as _;
+use std::io::Error;
 
-#[tokio::test]
-async fn test_file_tokio() -> Result<(), std::io::Error> {
-    use tokio::fs::File;
-    let file = File::open("src/tests/files/index.html").await?;
-    let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
-    let mut body = HttpBody::from_stream(content);
-    let mut buffer = Vec::new();
-    while let Some(Ok(chunk)) = body.next().await {
-        if let Ok(chunk) = chunk.into_data() {
-            buffer.extend_from_slice(&chunk);
-        }
-    }
-    assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
+#[cfg(feature = "compio")]
+mod compio;
+#[cfg(feature = "generic")]
+mod generic;
+
+#[test]
+fn test_empty() -> Result<(), Error> {
+    let body = HttpBody::empty();
+    assert!(matches!(body, HttpBody::Standard(empty) if empty.is_end_stream()));
     Ok(())
 }
 
-#[apply(test!)]
-async fn test_file_smol() -> Result<(), std::io::Error> {
-    use smol::fs::File;
-    let file = File::open("src/tests/files/index.html").await?;
-    let content = file
-        .bytes()
-        .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-    let mut body = HttpBody::from_stream(content);
-    let mut buffer = Vec::new();
-    while let Some(Ok(chunk)) = body.next().await {
-        if let Ok(chunk) = chunk.into_data() {
-            buffer.extend_from_slice(&chunk);
-        }
-    }
-    assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
+#[test]
+fn test_is_stream() -> Result<(), Error> {
+    let body = HttpBody::empty();
+    assert!(!body.is_stream());
     Ok(())
 }
 
-/*
-
-#[compio::test]
-async fn test_file_compio() -> Result<(), std::io::Error> {
-    use compio::{fs::File, io::AsyncReadExt};
-    use futures_util::StreamExt;
-    use std::io::Cursor;
-    let file = File::open("src/tests/files/index.html").await?;
-    let content = Cursor::new(file).read_only().bytes();
-    let mut body = HttpBody::from_stream(content);
-    let mut buffer = Vec::new();
-    while let Some(Ok(chunk)) = body.next().await {
-        if let Ok(chunk) = chunk.into_data() {
-            buffer.extend_from_slice(&chunk);
+#[test]
+fn test_from_bytes() -> Result<(), Error> {
+    let body = HttpBody::from_bytes(b"test");
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(e.into_inner(), Some(Bytes::from_static(b"test")));
         }
+        _ => panic!("Expected Standard body"),
     }
-    assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
     Ok(())
 }
-*/
+
+#[test]
+fn test_from_string() -> Result<(), Error> {
+    let body = HttpBody::from("some heap string".to_string());
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(
+                e.into_inner(),
+                Some(Bytes::from_static(b"some heap string"))
+            );
+        }
+        _ => panic!("Expected Standard body"),
+    }
+    Ok(())
+}
+
+#[test]
+fn test_from_str() -> Result<(), Error> {
+    let body = HttpBody::from("some text");
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(e.into_inner(), Some(Bytes::from_static(b"some text")));
+        }
+        _ => panic!("Expected Standard body"),
+    }
+    Ok(())
+}
+
+#[test]
+fn test_from_vec() -> Result<(), Error> {
+    let body = HttpBody::from(b"some text".to_vec());
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(e.into_inner(), Some(Bytes::from_static(b"some text")));
+        }
+        _ => panic!("Expected Standard body"),
+    }
+    Ok(())
+}
+
+#[test]
+fn test_from_slice() -> Result<(), Error> {
+    let body = HttpBody::from(b"some text".as_slice());
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(e.into_inner(), Some(Bytes::from_static(b"some text")));
+        }
+        _ => panic!("Expected Standard body"),
+    }
+    Ok(())
+}
+
+#[test]
+fn test_from_bytes_bytes() -> Result<(), Error> {
+    let body = HttpBody::from(Bytes::from_static(b"some text"));
+    match body {
+        HttpBody::Standard(e) => {
+            assert_eq!(e.into_inner(), Some(Bytes::from_static(b"some text")));
+        }
+        _ => panic!("Expected Standard body"),
+    }
+    Ok(())
+}
