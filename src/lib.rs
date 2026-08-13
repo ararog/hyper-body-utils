@@ -26,6 +26,8 @@ use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
 #[cfg(feature = "compio")]
 use send_wrapper::SendWrapper;
+#[cfg(feature = "generic")]
+use std::io::Error;
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -180,7 +182,7 @@ impl HttpBody {
     /// * You can't clone the stream, so you can't use it multiple times
     pub fn from_stream<S>(stream: S) -> Self
     where
-        S: Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + Sync + 'static,
+        S: Stream<Item = Result<Frame<Bytes>, Error>> + Send + Sync + 'static,
     {
         let body = StreamBody::new(stream);
         HttpBody::BoxedStream(BodyExt::boxed(body))
@@ -200,7 +202,7 @@ impl HttpBody {
     /// * You can't clone the stream, so you can't use it multiple times
     pub fn from_stream<S>(stream: S) -> Self
     where
-        S: Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static,
+        S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
     {
         HttpBody::BoxedStream(stream.boxed())
     }
@@ -227,6 +229,20 @@ impl HttpBody {
     pub fn empty() -> Self {
         Self::from_bytes(&Bytes::new())
     }
+
+    /// Try to clone the HttpBody, if it is a stream, it will return None
+    ///
+    /// # Returns
+    /// * `Option<HttpBody>` - Some(HttpBody) if it can be cloned,
+    pub fn try_clone(&self) -> Result<Self, Error> {
+        match self {
+            HttpBody::Standard(content) => Ok(HttpBody::Standard(content.clone())),
+            _ => Err(Error::new(
+                std::io::ErrorKind::Other,
+                "Cannot clone stream body",
+            )),
+        }
+    }
 }
 
 impl Body for HttpBody {
@@ -239,15 +255,9 @@ impl Body for HttpBody {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            HttpBody::Standard(full_body) => full_body
-                .frame()
-                .poll_unpin(cx)
-                .map_err(std::io::Error::other),
+            HttpBody::Standard(full_body) => full_body.frame().poll_unpin(cx).map_err(Error::other),
 
-            HttpBody::Incoming(incoming) => incoming
-                .frame()
-                .poll_unpin(cx)
-                .map_err(std::io::Error::other),
+            HttpBody::Incoming(incoming) => incoming.frame().poll_unpin(cx).map_err(Error::other),
 
             #[cfg(feature = "compio")]
             HttpBody::BoxedStream(stream) => stream
@@ -255,9 +265,7 @@ impl Body for HttpBody {
                 .map(|b| b.map(|b| b.map(Frame::data))),
 
             #[cfg(feature = "generic")]
-            HttpBody::BoxedStream(stream) => {
-                stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
-            }
+            HttpBody::BoxedStream(stream) => stream.frame().poll_unpin(cx).map_err(Error::other),
 
             #[cfg(all(feature = "http3", feature = "generic"))]
             HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
@@ -272,7 +280,7 @@ impl Body for HttpBody {
                 },
                 Err(e) => {
                     println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                    Poll::Ready(Some(Err(Error::other(e))))
                 }
             },
 
@@ -287,7 +295,7 @@ impl Body for HttpBody {
                         Poll::Ready(None)
                     }
                 },
-                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
 
             #[cfg(all(feature = "http3", feature = "generic"))]
@@ -303,7 +311,7 @@ impl Body for HttpBody {
                 },
                 Err(e) => {
                     println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                    Poll::Ready(Some(Err(Error::other(e))))
                 }
             },
 
@@ -318,7 +326,7 @@ impl Body for HttpBody {
                         Poll::Ready(None)
                     }
                 },
-                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
 
             #[cfg(all(feature = "http3", feature = "compio"))]
@@ -334,7 +342,7 @@ impl Body for HttpBody {
                 },
                 Err(e) => {
                     println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                    Poll::Ready(Some(Err(Error::other(e))))
                 }
             },
 
@@ -349,14 +357,14 @@ impl Body for HttpBody {
                         Poll::Ready(None)
                     }
                 },
-                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
         }
     }
 }
 
 impl Stream for HttpBody {
-    type Item = Result<Frame<Bytes>, std::io::Error>;
+    type Item = Result<Frame<Bytes>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_frame(cx)
@@ -402,7 +410,7 @@ impl From<File> for HttpBody {
 }
 
 #[cfg(feature = "compio")]
-fn from_asyncread<R>(reader: R) -> impl Stream<Item = Result<Bytes, std::io::Error>>
+fn from_asyncread<R>(reader: R) -> impl Stream<Item = Result<Bytes, Error>>
 where
     R: AsyncReadAt,
 {
