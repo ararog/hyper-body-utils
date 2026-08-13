@@ -14,6 +14,7 @@ hyper-body-utils = { version = "0.1.6" }
 
 * [tokio](https://github.com/tokio-rs/tokio)
 * [smol](https://github.com/smol-rs/smol)
+* [compio](https://github.com/compio-rs/compio)
 
 ## License
 
