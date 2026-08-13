@@ -57,7 +57,17 @@ pub enum HttpBody {
     /// QUIC client incoming stream
     #[cfg(all(feature = "http3", feature = "compio"))]
     CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    GenericClient(ClientRequestStream<GenericRecvStream, Bytes>),
     /// QUIC server incoming stream
+    #[cfg(all(feature = "http3", feature = "generic"))]
+    GenericServer(ServerRequestStream<GenericRecvStream, Bytes>),
+    /// QUIC client incoming stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
+    /// QUIC server incoming stream
+    #[cfg(all(feature = "http3", feature = "compio"))]
+    CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
     #[cfg(all(feature = "http3", feature = "compio"))]
     CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
 }
@@ -248,6 +258,37 @@ impl Body for HttpBody {
             HttpBody::BoxedStream(stream) => {
                 stream.frame().poll_unpin(cx).map_err(std::io::Error::other)
             }
+
+            #[cfg(all(feature = "http3", feature = "generic"))]
+            HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => {
+                    println!("Error polling frame: {}", e);
+                    Poll::Ready(Some(Err(std::io::Error::other(e))))
+                }
+            },
+
+            #[cfg(all(feature = "http3", feature = "generic"))]
+            HttpBody::GenericServer(stream) => match ready!(stream.poll_recv_data(cx)) {
+                Ok(frame) => match frame {
+                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
+                        frame.copy_to_bytes(frame.remaining()),
+                    )))),
+                    None => {
+                        cx.waker().wake_by_ref();
+                        Poll::Ready(None)
+                    }
+                },
+                Err(e) => Poll::Ready(Some(Err(std::io::Error::other(e)))),
+            },
 
             #[cfg(all(feature = "http3", feature = "generic"))]
             HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
