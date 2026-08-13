@@ -1,7 +1,7 @@
 use crate::HttpBody;
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
-use hyper::body::{Body, Frame};
+use hyper::body::Frame;
 use macro_rules_attribute::apply;
 use smol_macros::test;
 
@@ -11,6 +11,20 @@ async fn test_file_tokio() -> Result<(), std::io::Error> {
     let file = File::open("src/tests/files/index.html").await?;
     let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
     let mut body = HttpBody::from_stream(content);
+    let mut buffer = Vec::new();
+    while let Some(Ok(chunk)) = body.next().await {
+        if let Ok(chunk) = chunk.into_data() {
+            buffer.extend_from_slice(&chunk);
+        }
+    }
+    assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_bytes_tokio() -> Result<(), std::io::Error> {
+    let content = Bytes::from_static(b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
+    let mut body = HttpBody::from_bytes(&content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
