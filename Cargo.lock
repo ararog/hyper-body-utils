@@ -804,7 +804,7 @@ dependencies = [
 
 [[package]]
 name = "hyper-body-utils"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "async-fn-stream",
  "bytes",
