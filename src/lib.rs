@@ -59,17 +59,7 @@ pub enum HttpBody {
     /// QUIC client incoming stream
     #[cfg(all(feature = "http3", feature = "compio"))]
     CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    GenericClient(ClientRequestStream<GenericRecvStream, Bytes>),
     /// QUIC server incoming stream
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    GenericServer(ServerRequestStream<GenericRecvStream, Bytes>),
-    /// QUIC client incoming stream
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
-    /// QUIC server incoming stream
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
     #[cfg(all(feature = "http3", feature = "compio"))]
     CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
 }
