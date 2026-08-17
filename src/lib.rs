@@ -26,9 +26,8 @@ use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
 #[cfg(feature = "compio")]
 use send_wrapper::SendWrapper;
-#[cfg(feature = "generic")]
-use std::io::Error;
 use std::{
+    io::Error,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -44,12 +43,12 @@ pub enum HttpBody {
     Standard(Full<Bytes>),
     /// Incoming body from hyper, mainly for client responses and server request bodies
     Incoming(Incoming),
-    #[cfg(feature = "compio")]
-    /// Bytes framed body from compio
-    BoxedStream(BoxStream<'static, Result<Bytes, std::io::Error>>),
     #[cfg(feature = "generic")]
     /// Boxed stream body from pool based runtimes
-    BoxedStream(BoxBody<Bytes, std::io::Error>),
+    GenericStream(BoxBody<Bytes, std::io::Error>),
+    #[cfg(feature = "compio")]
+    /// Bytes framed body from compio
+    CompioStream(BoxStream<'static, Result<Bytes, std::io::Error>>),
     /// QUIC client incoming stream
     #[cfg(all(feature = "http3", feature = "generic"))]
     GenericClient(ClientRequestStream<GenericRecvStream, Bytes>),
@@ -170,12 +169,12 @@ impl HttpBody {
     /// # Notes
     /// * This method is intended for use with streams that are already boxed
     /// * You can't clone the stream, so you can't use it multiple times
-    pub fn from_stream<S>(stream: S) -> Self
+    pub fn from_generic_stream<S>(stream: S) -> Self
     where
         S: Stream<Item = Result<Frame<Bytes>, Error>> + Send + Sync + 'static,
     {
         let body = StreamBody::new(stream);
-        HttpBody::BoxedStream(BodyExt::boxed(body))
+        HttpBody::GenericStream(BodyExt::boxed(body))
     }
 
     #[cfg(feature = "compio")]
@@ -190,11 +189,11 @@ impl HttpBody {
     /// # Notes
     /// * This method is intended for use with streams that are already boxed
     /// * You can't clone the stream, so you can't use it multiple times
-    pub fn from_stream<S>(stream: S) -> Self
+    pub fn from_compio_stream<S>(stream: S) -> Self
     where
         S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
     {
-        HttpBody::BoxedStream(stream.boxed())
+        HttpBody::CompioStream(stream.boxed())
     }
 
     /// Check if the HttpBody is a stream
@@ -204,11 +203,11 @@ impl HttpBody {
     pub fn is_stream(&self) -> bool {
         #[cfg(feature = "generic")]
         {
-            matches!(self, HttpBody::BoxedStream(_))
+            matches!(self, HttpBody::GenericStream(_))
         }
         #[cfg(feature = "compio")]
         {
-            matches!(self, HttpBody::BoxedStream(_))
+            matches!(self, HttpBody::CompioStream(_))
         }
     }
 
@@ -249,13 +248,13 @@ impl Body for HttpBody {
 
             HttpBody::Incoming(incoming) => incoming.frame().poll_unpin(cx).map_err(Error::other),
 
+            #[cfg(feature = "generic")]
+            HttpBody::GenericStream(stream) => stream.frame().poll_unpin(cx).map_err(Error::other),
+
             #[cfg(feature = "compio")]
-            HttpBody::BoxedStream(stream) => stream
+            HttpBody::CompioStream(stream) => stream
                 .poll_next_unpin(cx)
                 .map(|b| b.map(|b| b.map(Frame::data))),
-
-            #[cfg(feature = "generic")]
-            HttpBody::BoxedStream(stream) => stream.frame().poll_unpin(cx).map_err(Error::other),
 
             #[cfg(all(feature = "http3", feature = "generic"))]
             HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
@@ -395,7 +394,7 @@ impl From<Bytes> for HttpBody {
 impl From<File> for HttpBody {
     fn from(value: File) -> Self {
         let stream = from_asyncread(value);
-        HttpBody::from_stream(SendWrapper::new(stream))
+        HttpBody::from_compio_stream(SendWrapper::new(stream))
     }
 }
 

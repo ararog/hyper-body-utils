@@ -10,7 +10,7 @@ async fn test_file_tokio() -> Result<(), std::io::Error> {
     use tokio::fs::File;
     let file = File::open("src/tests/files/index.html").await?;
     let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
-    let mut body = HttpBody::from_stream(content);
+    let mut body = HttpBody::from_generic_stream(content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
@@ -43,7 +43,7 @@ async fn test_file_smol() -> Result<(), std::io::Error> {
     let content = file
         .bytes()
         .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-    let mut body = HttpBody::from_stream(content);
+    let mut body = HttpBody::from_generic_stream(content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
