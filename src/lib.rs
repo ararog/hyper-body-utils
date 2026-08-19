@@ -1,31 +1,15 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
-#[cfg(feature = "compio")]
-use async_fn_stream::try_fn_stream;
-#[cfg(feature = "http3")]
-use bytes::Buf;
+#[cfg(any(feature = "compio-h3", feature = "generic-h3"))]
+use bytes::Buf as _;
 use bytes::Bytes;
-#[cfg(feature = "compio")]
-use compio::{fs::File, io::AsyncReadAt, BufResult};
-#[cfg(all(feature = "http3", feature = "compio"))]
-use compio_quic::RecvStream as CompioRecvStream;
-#[cfg(feature = "http3")]
+#[cfg(any(feature = "compio-h3", feature = "generic-h3"))]
 use futures::ready;
 #[cfg(feature = "compio")]
-use futures::{stream::BoxStream, StreamExt as _};
+use futures::StreamExt as _;
 use futures::{FutureExt, Stream};
-#[cfg(feature = "http3")]
-use h3::{
-    client::RequestStream as ClientRequestStream, server::RequestStream as ServerRequestStream,
-};
-#[cfg(all(feature = "http3", feature = "generic"))]
-use h3_quinn::RecvStream as GenericRecvStream;
 use http_body_util::Full;
-#[cfg(feature = "generic")]
-use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::body::{Body, Frame, Incoming};
-#[cfg(feature = "compio")]
-use send_wrapper::SendWrapper;
 use std::{
     io::Error,
     pin::Pin,
@@ -45,22 +29,22 @@ pub enum HttpBody {
     Incoming(Incoming),
     #[cfg(feature = "generic")]
     /// Boxed stream body from pool based runtimes
-    GenericStream(BoxBody<Bytes, std::io::Error>),
+    GenericStream(http_body_util::combinators::BoxBody<Bytes, std::io::Error>),
     #[cfg(feature = "compio")]
     /// Bytes framed body from compio
-    CompioStream(BoxStream<'static, Result<Bytes, std::io::Error>>),
+    CompioStream(futures::stream::BoxStream<'static, Result<Bytes, std::io::Error>>),
     /// QUIC client incoming stream
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    GenericClient(ClientRequestStream<GenericRecvStream, Bytes>),
+    #[cfg(feature = "generic-h3")]
+    GenericClient(h3::client::RequestStream<h3_quinn::RecvStream, Bytes>),
     /// QUIC server incoming stream
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    GenericServer(ServerRequestStream<GenericRecvStream, Bytes>),
+    #[cfg(feature = "generic-h3")]
+    GenericServer(h3::server::RequestStream<h3_quinn::RecvStream, Bytes>),
     /// QUIC client incoming stream
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    CompioClient(ClientRequestStream<CompioRecvStream, Bytes>),
+    #[cfg(feature = "compio-h3")]
+    CompioClient(compio_quic::h3::client::RequestStream<compio_quic::RecvStream, Bytes>),
     /// QUIC server incoming stream
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    CompioServer(ServerRequestStream<CompioRecvStream, Bytes>),
+    #[cfg(feature = "compio-h3")]
+    CompioServer(compio_quic::h3::server::RequestStream<compio_quic::RecvStream, Bytes>),
 }
 
 impl HttpBody {
@@ -84,8 +68,10 @@ impl HttpBody {
     ///
     /// # Returns
     /// * `HttpBody` - The created HttpBody
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    pub fn from_generic_client(stream: ClientRequestStream<GenericRecvStream, Bytes>) -> Self {
+    #[cfg(feature = "generic-h3")]
+    pub fn from_generic_client(
+        stream: h3::client::RequestStream<h3_quinn::RecvStream, Bytes>,
+    ) -> Self {
         HttpBody::GenericClient(stream)
     }
 
@@ -97,8 +83,10 @@ impl HttpBody {
     ///
     /// # Returns
     /// * `HttpBody` - The created HttpBody
-    #[cfg(all(feature = "http3", feature = "generic"))]
-    pub fn from_generic_server(stream: ServerRequestStream<GenericRecvStream, Bytes>) -> Self {
+    #[cfg(feature = "generic-h3")]
+    pub fn from_generic_server(
+        stream: h3::server::RequestStream<h3_quinn::RecvStream, Bytes>,
+    ) -> Self {
         HttpBody::GenericServer(stream)
     }
 
@@ -110,8 +98,10 @@ impl HttpBody {
     ///
     /// # Returns
     /// * `HttpBody` - The created HttpBody
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    pub fn from_compio_client(stream: ClientRequestStream<CompioRecvStream, Bytes>) -> Self {
+    #[cfg(feature = "compio-h3")]
+    pub fn from_compio_client(
+        stream: compio_quic::h3::client::RequestStream<compio_quic::RecvStream, Bytes>,
+    ) -> Self {
         HttpBody::CompioClient(stream)
     }
 
@@ -123,8 +113,10 @@ impl HttpBody {
     ///
     /// # Returns
     /// * `HttpBody` - The created HttpBody
-    #[cfg(all(feature = "http3", feature = "compio"))]
-    pub fn from_compio_server(stream: ServerRequestStream<CompioRecvStream, Bytes>) -> Self {
+    #[cfg(feature = "compio-h3")]
+    pub fn from_compio_server(
+        stream: compio_quic::h3::server::RequestStream<compio_quic::RecvStream, Bytes>,
+    ) -> Self {
         HttpBody::CompioServer(stream)
     }
 
@@ -173,8 +165,8 @@ impl HttpBody {
     where
         S: Stream<Item = Result<Frame<Bytes>, Error>> + Send + Sync + 'static,
     {
-        let body = StreamBody::new(stream);
-        HttpBody::GenericStream(BodyExt::boxed(body))
+        let body = http_body_util::StreamBody::new(stream);
+        HttpBody::GenericStream(body.boxed())
     }
 
     #[cfg(feature = "compio")]
@@ -194,21 +186,6 @@ impl HttpBody {
         S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
     {
         HttpBody::CompioStream(stream.boxed())
-    }
-
-    /// Check if the HttpBody is a stream
-    ///
-    /// # Returns
-    /// * `bool` - True if the HttpBody is a stream, false otherwise
-    pub fn is_stream(&self) -> bool {
-        #[cfg(feature = "generic")]
-        {
-            matches!(self, HttpBody::GenericStream(_))
-        }
-        #[cfg(feature = "compio")]
-        {
-            matches!(self, HttpBody::CompioStream(_))
-        }
     }
 
     /// Create a new empty HttpBody
@@ -256,7 +233,7 @@ impl Body for HttpBody {
                 .poll_next_unpin(cx)
                 .map(|b| b.map(|b| b.map(Frame::data))),
 
-            #[cfg(all(feature = "http3", feature = "generic"))]
+            #[cfg(feature = "generic-h3")]
             HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
@@ -267,13 +244,10 @@ impl Body for HttpBody {
                         Poll::Ready(None)
                     }
                 },
-                Err(e) => {
-                    println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(Error::other(e))))
-                }
+                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
 
-            #[cfg(all(feature = "http3", feature = "generic"))]
+            #[cfg(feature = "generic-h3")]
             HttpBody::GenericServer(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
@@ -287,38 +261,7 @@ impl Body for HttpBody {
                 Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
 
-            #[cfg(all(feature = "http3", feature = "generic"))]
-            HttpBody::GenericClient(stream) => match ready!(stream.poll_recv_data(cx)) {
-                Ok(frame) => match frame {
-                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
-                        frame.copy_to_bytes(frame.remaining()),
-                    )))),
-                    None => {
-                        cx.waker().wake_by_ref();
-                        Poll::Ready(None)
-                    }
-                },
-                Err(e) => {
-                    println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(Error::other(e))))
-                }
-            },
-
-            #[cfg(all(feature = "http3", feature = "generic"))]
-            HttpBody::GenericServer(stream) => match ready!(stream.poll_recv_data(cx)) {
-                Ok(frame) => match frame {
-                    Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
-                        frame.copy_to_bytes(frame.remaining()),
-                    )))),
-                    None => {
-                        cx.waker().wake_by_ref();
-                        Poll::Ready(None)
-                    }
-                },
-                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
-            },
-
-            #[cfg(all(feature = "http3", feature = "compio"))]
+            #[cfg(feature = "compio-h3")]
             HttpBody::CompioClient(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
@@ -329,13 +272,10 @@ impl Body for HttpBody {
                         Poll::Ready(None)
                     }
                 },
-                Err(e) => {
-                    println!("Error polling frame: {}", e);
-                    Poll::Ready(Some(Err(Error::other(e))))
-                }
+                Err(e) => Poll::Ready(Some(Err(Error::other(e)))),
             },
 
-            #[cfg(all(feature = "http3", feature = "compio"))]
+            #[cfg(feature = "compio-h3")]
             HttpBody::CompioServer(stream) => match ready!(stream.poll_recv_data(cx)) {
                 Ok(frame) => match frame {
                     Some(mut frame) => Poll::Ready(Some(Ok(Frame::data(
@@ -391,23 +331,23 @@ impl From<Bytes> for HttpBody {
 }
 
 #[cfg(feature = "compio")]
-impl From<File> for HttpBody {
-    fn from(value: File) -> Self {
+impl From<compio::fs::File> for HttpBody {
+    fn from(value: compio::fs::File) -> Self {
         let stream = from_asyncread(value);
-        HttpBody::from_compio_stream(SendWrapper::new(stream))
+        HttpBody::from_compio_stream(send_wrapper::SendWrapper::new(stream))
     }
 }
 
 #[cfg(feature = "compio")]
 fn from_asyncread<R>(reader: R) -> impl Stream<Item = Result<Bytes, Error>>
 where
-    R: AsyncReadAt,
+    R: compio::io::AsyncReadAt,
 {
-    try_fn_stream(|emitter| async move {
+    async_fn_stream::try_fn_stream(|emitter| async move {
         let mut pos = 0;
         loop {
             let buf = Vec::with_capacity(4096);
-            let BufResult(res, buffer) = reader.read_at(buf, pos).await;
+            let compio::BufResult(res, buffer) = reader.read_at(buf, pos).await;
             let len = res?;
             if len == 0 {
                 break Ok(());
