@@ -17,15 +17,18 @@ all-features = true
 
 [features]
 default = ["generic"]
-http3 = ["dep:h3"]
-generic = ["h3-quinn"]
-compio = ["compio/io", "compio-quic/h3", "compio-quic/ring", "compio-quic/io-compat", "dep:send_wrapper"]
+
+generic = []
+generic-h3 = ["dep:h3", "dep:h3-quinn"]
+
+compio = ["dep:send_wrapper"]
+compio-h3 = ["compio/io", "compio-quic/h3", "compio-quic/ring", "compio-quic/io-compat"]
 
 [dependencies]
 async-fn-stream = "0.3.2"
 bytes = "1.11.1"
-compio = { version = "0.19.1", default-features = false, features = ["fs", "io"] }
-compio-quic = { version = "0.8.0", optional = true, default-features = false }
+compio = { version = "0.19.2", default-features = false, features = ["fs", "io"] }
+compio-quic = { version = "0.8.2", optional = true, default-features = false }
 futures = { version = "0.3.32", default-features = false }
 h3 = { version = "0.0.8", optional = true, default-features = false }
 h3-quinn = { version = "0.0.10", optional = true, default-features = false }
