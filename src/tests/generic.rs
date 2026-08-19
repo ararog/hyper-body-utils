@@ -53,3 +53,17 @@ async fn test_file_smol() -> Result<(), std::io::Error> {
     assert_eq!(buffer, b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
     Ok(())
 }
+
+#[apply(test!)]
+async fn test_try_clone_fail_smol() -> Result<(), std::io::Error> {
+    use smol::fs::File;
+    use smol::io::AsyncReadExt;
+    let file = File::open("src/tests/files/index.html").await?;
+    let content = file
+        .bytes()
+        .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
+    let body = HttpBody::from_generic_stream(content);
+    let err_body = body.try_clone();
+    assert!(matches!(err_body, Err(_)));
+    Ok(())
+}

@@ -16,9 +16,18 @@ fn test_empty() -> Result<(), Error> {
 }
 
 #[test]
-fn test_is_stream() -> Result<(), Error> {
-    let body = HttpBody::empty();
-    assert!(!body.is_stream());
+fn test_clone() -> Result<(), Error> {
+    let body_a = HttpBody::from_bytes(b"test");
+
+    let Ok(HttpBody::Standard(body_b)) = body_a.try_clone() else {
+        panic!("Expected Standard body")
+    };
+
+    match body_a {
+        HttpBody::Standard(bytes) => assert_eq!(bytes.into_inner(), body_b.into_inner()),
+        _ => panic!("Should not happen"),
+    };
+
     Ok(())
 }
 
