@@ -5,8 +5,6 @@ use bytes::Buf as _;
 use bytes::Bytes;
 #[cfg(any(feature = "compio-h3", feature = "generic-h3"))]
 use futures::ready;
-#[cfg(feature = "compio")]
-use futures::StreamExt as _;
 use futures::{FutureExt, Stream};
 use http_body_util::Full;
 use hyper::body::{Body, Frame, Incoming};
@@ -166,7 +164,7 @@ impl HttpBody {
         S: Stream<Item = Result<Frame<Bytes>, Error>> + Send + Sync + 'static,
     {
         let body = http_body_util::StreamBody::new(stream);
-        HttpBody::GenericStream(body.boxed())
+        HttpBody::GenericStream(http_body_util::BodyExt::boxed(body))
     }
 
     #[cfg(feature = "compio")]
@@ -185,7 +183,7 @@ impl HttpBody {
     where
         S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
     {
-        HttpBody::CompioStream(stream.boxed())
+        HttpBody::CompioStream(futures::StreamExt::boxed(stream))
     }
 
     /// Create a new empty HttpBody
