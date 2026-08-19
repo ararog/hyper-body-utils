@@ -27,7 +27,11 @@ Basic usage:
 ```rust
 use hyper_body_utils::HttpBody;
 
-let body = HttpBody::from_bytes(b"Hello, world!");
+let bytes_body = HttpBody::from_bytes(b"Hello, world!");
+
+//or
+
+let text_body: HttpBody = "Another world!!".into();
 ```
 
 ## Examples
