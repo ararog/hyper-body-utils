@@ -5,6 +5,8 @@ use bytes::Buf as _;
 use bytes::Bytes;
 #[cfg(any(feature = "compio-h3", feature = "generic-h3"))]
 use futures::ready;
+#[cfg(feature = "compio")]
+use futures::StreamExt as _;
 use futures::{FutureExt, Stream};
 use http_body_util::Full;
 use hyper::body::{Body, Frame, Incoming};
@@ -14,7 +16,7 @@ use std::{
     task::{Context, Poll},
 };
 
-pub use http_body_util::BodyExt;
+use http_body_util::BodyExt;
 
 #[cfg(test)]
 mod tests;
@@ -183,7 +185,7 @@ impl HttpBody {
     where
         S: Stream<Item = Result<Bytes, Error>> + Send + 'static,
     {
-        HttpBody::CompioStream(futures::StreamExt::boxed(stream))
+        HttpBody::CompioStream(stream.boxed())
     }
 
     /// Create a new empty HttpBody
