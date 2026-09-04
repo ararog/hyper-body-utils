@@ -16,6 +16,27 @@ fn test_empty() -> Result<(), Error> {
 }
 
 #[test]
+fn test_debug() -> Result<(), Error> {
+    let body = HttpBody::from_bytes(b"test");
+    assert_eq!(format!("{:?}", body), "HttpBody::Standard(b\"test\")");
+    Ok(())
+}
+
+#[test]
+fn test_debug_empty() -> Result<(), Error> {
+    let body = HttpBody::empty();
+    assert_eq!(format!("{:?}", body), "HttpBody::Standard(b\"\")");
+    Ok(())
+}
+
+#[test]
+fn test_default() -> Result<(), Error> {
+    let body = HttpBody::default();
+    assert!(matches!(body, HttpBody::Standard(empty) if empty.is_end_stream()));
+    Ok(())
+}
+
+#[test]
 fn test_clone() -> Result<(), Error> {
     let body_a = HttpBody::from_bytes(b"test");
 
