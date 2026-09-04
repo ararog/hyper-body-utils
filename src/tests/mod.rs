@@ -25,7 +25,7 @@ fn test_debug() -> Result<(), Error> {
 #[test]
 fn test_debug_empty() -> Result<(), Error> {
     let body = HttpBody::empty();
-    assert_eq!(format!("{:?}", body), "HttpBody::Standard(b\"\")");
+    assert_eq!(format!("{:?}", body), "HttpBody::Standard");
     Ok(())
 }
 
