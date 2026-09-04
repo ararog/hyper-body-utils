@@ -8,15 +8,14 @@ use futures::ready;
 #[cfg(feature = "compio")]
 use futures::StreamExt as _;
 use futures::{FutureExt, Stream};
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Frame, Incoming};
 use std::{
+    fmt::{Debug, Formatter},
     io::Error,
     pin::Pin,
     task::{Context, Poll},
 };
-
-use http_body_util::BodyExt;
 
 #[cfg(test)]
 mod tests;
@@ -207,6 +206,39 @@ impl HttpBody {
                 std::io::ErrorKind::Other,
                 "Cannot clone stream body",
             )),
+        }
+    }
+}
+
+impl Default for HttpBody {
+    fn default() -> Self {
+        HttpBody::empty()
+    }
+}
+
+impl Debug for HttpBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HttpBody::Standard(content) => {
+                if let Some(content) = content.clone().into_inner() {
+                    f.debug_tuple("HttpBody::Standard").field(&content).finish()
+                } else {
+                    f.debug_tuple("HttpBody::Standard").finish()
+                }
+            }
+            HttpBody::Incoming(_) => f.debug_tuple("HttpBody::Incoming").finish(),
+            #[cfg(feature = "generic")]
+            HttpBody::GenericStream(_) => f.debug_tuple("HttpBody::GenericStream").finish(),
+            #[cfg(feature = "compio")]
+            HttpBody::CompioStream(_) => f.debug_tuple("HttpBody::CompioStream").finish(),
+            #[cfg(feature = "generic-h3")]
+            HttpBody::GenericClient(_) => f.debug_tuple("HttpBody::GenericClient").finish(),
+            #[cfg(feature = "generic-h3")]
+            HttpBody::GenericServer(_) => f.debug_tuple("HttpBody::GenericServer").finish(),
+            #[cfg(feature = "compio-h3")]
+            HttpBody::CompioClient(_) => f.debug_tuple("HttpBody::CompioClient").finish(),
+            #[cfg(feature = "compio-h3")]
+            HttpBody::CompioServer(_) => f.debug_tuple("HttpBody::CompioServer").finish(),
         }
     }
 }
