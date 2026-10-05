@@ -3,11 +3,6 @@ use bytes::Bytes;
 use hyper::body::Body as _;
 use std::io::Error;
 
-#[cfg(feature = "compio")]
-mod compio;
-#[cfg(feature = "generic")]
-mod generic;
-
 #[test]
 fn test_empty() -> Result<(), Error> {
     let body = HttpBody::empty();
@@ -17,7 +12,7 @@ fn test_empty() -> Result<(), Error> {
 
 #[test]
 fn test_debug() -> Result<(), Error> {
-    let body = HttpBody::from_bytes(b"test");
+    let body = HttpBody::bytes(b"test");
     assert_eq!(format!("{:?}", body), "HttpBody::Standard(b\"test\")");
     Ok(())
 }
@@ -38,7 +33,7 @@ fn test_default() -> Result<(), Error> {
 
 #[test]
 fn test_clone() -> Result<(), Error> {
-    let body_a = HttpBody::from_bytes(b"test");
+    let body_a = HttpBody::bytes(b"test");
 
     let Ok(HttpBody::Standard(body_b)) = body_a.try_clone() else {
         panic!("Expected Standard body")
@@ -54,7 +49,7 @@ fn test_clone() -> Result<(), Error> {
 
 #[test]
 fn test_from_bytes() -> Result<(), Error> {
-    let body = HttpBody::from_bytes(b"test");
+    let body = HttpBody::bytes(b"test");
     match body {
         HttpBody::Standard(e) => {
             assert_eq!(e.into_inner(), Some(Bytes::from_static(b"test")));
