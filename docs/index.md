@@ -27,7 +27,7 @@ Basic usage:
 ```rust
 use hyper_body_utils::HttpBody;
 
-let bytes_body = HttpBody::from_bytes(b"Hello, world!");
+let bytes_body = HttpBody::bytes(b"Hello, world!");
 
 //or
 
