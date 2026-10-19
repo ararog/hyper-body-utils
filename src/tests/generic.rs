@@ -10,7 +10,7 @@ async fn test_file_tokio() -> Result<(), std::io::Error> {
     use tokio::fs::File;
     let file = File::open("src/tests/files/index.html").await?;
     let content = tokio_util::io::ReaderStream::new(file).map_ok(Frame::data);
-    let mut body = HttpBody::from_generic_stream(content);
+    let mut body = HttpBody::stream(content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
@@ -24,7 +24,7 @@ async fn test_file_tokio() -> Result<(), std::io::Error> {
 #[tokio::test]
 async fn test_bytes_tokio() -> Result<(), std::io::Error> {
     let content = Bytes::from_static(b"<html>\n<head>\n  <title>\n    Tested!\n  </title>\n</head>\n<body>\n  <p>\n    Tested!\n  </p>\n</body>\n</html>");
-    let mut body = HttpBody::from_bytes(&content);
+    let mut body = HttpBody::bytes(&content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
@@ -43,7 +43,7 @@ async fn test_file_smol() -> Result<(), std::io::Error> {
     let content = file
         .bytes()
         .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-    let mut body = HttpBody::from_generic_stream(content);
+    let mut body = HttpBody::stream(content);
     let mut buffer = Vec::new();
     while let Some(Ok(chunk)) = body.next().await {
         if let Ok(chunk) = chunk.into_data() {
@@ -62,7 +62,7 @@ async fn test_try_clone_fail_smol() -> Result<(), std::io::Error> {
     let content = file
         .bytes()
         .map_ok(|data| Frame::data(Bytes::copy_from_slice(&[data])));
-    let body = HttpBody::from_generic_stream(content);
+    let body = HttpBody::stream(content);
     let err_body = body.try_clone();
     assert!(matches!(err_body, Err(_)));
     Ok(())

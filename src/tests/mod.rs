@@ -3,6 +3,8 @@ use bytes::Bytes;
 use hyper::body::Body as _;
 use std::io::Error;
 
+mod generic;
+
 #[test]
 fn test_empty() -> Result<(), Error> {
     let body = HttpBody::empty();
