@@ -121,3 +121,11 @@ fn test_from_bytes_bytes() -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[test]
+fn test_into_vec() -> Result<(), Error> {
+    let body = HttpBody::bytes(b"test");
+    let vec: Vec<u8> = body.try_into()?;
+    assert_eq!(vec, b"test");
+    Ok(())
+}
