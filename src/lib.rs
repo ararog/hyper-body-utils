@@ -29,7 +29,7 @@ pub enum HttpBody {
     /// Boxed stream body from pool based runtimes
     Stream(BoxBody<Bytes, std::io::Error>),
     #[cfg(feature = "h3")]
-    /// Enum for quic related bodies    
+    /// Enum for quic related bodies
     Quic(QuicBody),
 }
 
@@ -339,6 +339,27 @@ impl From<Vec<u8>> for HttpBody {
 impl From<Bytes> for HttpBody {
     fn from(value: Bytes) -> Self {
         HttpBody::bytes(&value)
+    }
+}
+
+impl TryInto<Vec<u8>> for HttpBody {
+    type Error = std::io::Error;
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        if let HttpBody::Standard(bytes) = self {
+            if let Some(inner_bytes) = bytes.into_inner() {
+                Ok(inner_bytes.into())
+            } else {
+                Err(Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Cannot convert body from a stream",
+                ))
+            }
+        } else {
+            Err(Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Cannot convert body from a stream",
+            ))
+        }
     }
 }
 
